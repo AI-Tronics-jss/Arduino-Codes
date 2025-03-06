@@ -1,0 +1,101 @@
+#include <DHT.h>
+
+#define MQ135_PIN A0   // MQ-135 for gases
+#define GP2Y10_PIN A1  // Dust sensor analog output
+#define LED_PIN 7      // GP2Y10 LED control pin
+#define DHT_PIN 6      // DHT22 data pin
+#define DHT_TYPE DHT22
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+void setup() {
+    Serial.begin(115200);  // Faster serial communication
+    dht.begin();
+    pinMode(LED_PIN, OUTPUT);
+}
+
+void loop() {
+    // 1. Read PM2.5 & PM10 from GP2Y10
+    float dust_value = getAvgDustValue();
+    float pm25_ug = calculatePM2_5(dust_value);
+    float pm10_ug = calculatePM10(dust_value);
+
+    Serial.print("PM2.5: "); Serial.print(pm25_ug); Serial.println(" µg/m³");
+    Serial.print("PM10: "); Serial.print(pm10_ug); Serial.println(" µg/m³");
+
+    // 2. Read Air Quality (MQ-135)
+    int mq135_value = analogRead(MQ135_PIN);
+    float co_mg = calculateCO(mq135_value);
+    float no2_ug = calculateNO2(mq135_value);
+    float ozone_ug = calculateOzone(mq135_value);
+    float benzene_ug = calculateBenzene(mq135_value);
+    float nh3_ug = calculateNH3(mq135_value);
+
+    Serial.print("CO: "); Serial.print(co_mg); Serial.println(" mg/m³");
+    Serial.print("NO2: "); Serial.print(no2_ug); Serial.println(" µg/m³");
+    Serial.print("Ozone: "); Serial.print(ozone_ug); Serial.println(" µg/m³");
+    Serial.print("Benzene: "); Serial.print(benzene_ug); Serial.println(" µg/m³");
+    Serial.print("NH3: "); Serial.print(nh3_ug); Serial.println(" µg/m³");
+
+    // 3. Read Temperature & Humidity from DHT22
+    float temp = dht.readTemperature();
+    float humidity = dht.readHumidity();
+
+    if (isnan(temp) || isnan(humidity)) {
+        Serial.println("Failed to read from DHT sensor!");
+    } else {
+        Serial.print("Temperature: "); Serial.print(temp); Serial.println(" °C");
+        Serial.print("Humidity: "); Serial.print(humidity); Serial.println(" %");
+    }
+
+    Serial.println("--------------------------");
+    delay(5000); // Wait before next reading
+}
+
+// Function to average dust sensor readings
+float getAvgDustValue() {
+    int sum = 0;
+    for (int i = 0; i < 5; i++) {
+        digitalWrite(LED_PIN, LOW);
+        delayMicroseconds(280);
+        sum += analogRead(GP2Y10_PIN);
+        digitalWrite(LED_PIN, HIGH);
+        delay(50);  // Small delay between readings
+    }
+    return sum / 5.0;
+}
+
+// Calibration & Conversion Functions
+float calculateCO(int mq135) {
+    float RS = (5.0 * (1023.0 - mq135) / mq135) / 10.0; 
+    float ppm = 116.6020682 * pow(RS, -2.769034857); 
+    return max(ppm * 1.145, 1.0);  
+}
+
+float calculateNO2(int mq135) {
+    float ppm = (mq135 - 100) * 0.02;
+    return max(ppm * 1880, 1.0);
+}
+
+float calculateOzone(int mq135) {
+    float ppm = (mq135 - 100) * 0.03;
+    return max(ppm * 2000, 1.0);
+}      
+
+float calculateBenzene(int mq135) {
+    float ppm = (mq135 - 100) * 0.01;
+    return max(ppm * 3190, 1.0);
+}
+
+float calculateNH3(int mq135) {
+    float ppm = (mq135 - 100) * 0.015;
+    return max(ppm * 697, 1.0);
+}
+
+float calculatePM2_5(float dust) {
+    return max((dust / 1024.0) * 500, 1.0);
+}
+
+float calculatePM10(float dust) {
+    return max((dust / 1024.0) * 700, 1.0);
+}
